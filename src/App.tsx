@@ -1,304 +1,316 @@
 import { useEffect, useRef, useState } from "react";
-import { supabase } from "./supabase";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { createClient } from '@supabase/supabase-js';
+
+// Initialize Supabase
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 function App() {
-  const [session, setSession] = useState<any | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected">("disconnected");
-
+  const [session, setSession] = useState<any>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [box, setBox] = useState({ x: 100, y: 100 });
+  const [connected, setConnected] = useState(false);
+  const wsRef = useRef<any>(null);
+  const boxRef = useRef<any>(null);
+  const dragging = useRef(false);
+  const offset = useRef({ x: 0, y: 0 });
 
-  const [position, setPosition] = useState({ x: 100, y: 100 });
-
-  // Profile state with KV caching
-  const [profile, setProfile] = useState<any>(null);
-  const [profileLoading, setProfileLoading] = useState(false);
-  const [isCached, setIsCached] = useState(false);
-
-  const wsRef = useRef<WebSocket | null>(null);
-  const lastSentRef = useRef(0);
-  const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
-  const boxRef = useRef<HTMLDivElement>(null);
-
-  // 🔐 AUTH STATE
+  // Auth
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
-      setLoading(false);
     });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // 👤 FETCH PROFILE WITH KV CACHING
-  const fetchProfile = async () => {
-    if (!session) return;
-    
-    setProfileLoading(true);
-    try {
-      const response = await fetch('http://127.0.0.1:8787/profile', {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setProfile(data.profile);
-        setIsCached(data.cached || false);
-        console.log(`Profile ${data.cached ? '✅ (cached)' : '🆕 (fresh)'}:`, data.profile);
-      } else {
-        console.error('Profile fetch failed:', await response.text());
-      }
-    } catch (error) {
-      console.error('Failed to fetch profile:', error);
-    } finally {
-      setProfileLoading(false);
-    }
-  };
-
-  // Fetch profile when session is available
-  useEffect(() => {
-    if (session) {
-      fetchProfile();
-    }
-  }, [session]);
-
-  // 🔌 WEBSOCKET CONNECT
+  // WebSocket
   useEffect(() => {
     if (!session) return;
 
     const token = session.access_token;
-    console.log('Connecting WebSocket with token:', token.substring(0, 10) + '...');
-
-    const ws = new WebSocket(
-      `ws://127.0.0.1:8787/ws?token=${encodeURIComponent(token)}`
-    );
-
+    const ws = new WebSocket(`ws://127.0.0.1:8787/ws?token=${token}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log("✅ WebSocket connected successfully");
-      setConnectionStatus("connected");
+      console.log("✅ WebSocket connected");
+      setConnected(true);
     };
 
-    ws.onmessage = (event) => {
-      console.log("📩 Received message:", event.data);
-      setPosition(JSON.parse(event.data));
+    ws.onclose = () => {
+      console.log("❌ WebSocket disconnected");
+      setConnected(false);
     };
 
     ws.onerror = (error) => {
-      console.error("❌ WebSocket error:", error);
-      setConnectionStatus("disconnected");
+      console.error("WebSocket error:", error);
+      setConnected(false);
     };
 
-    ws.onclose = (event) => {
-      console.log(`🔌 WebSocket closed: ${event.code} - ${event.reason}`);
-      setConnectionStatus("disconnected");
+    ws.onmessage = (e) => {
+      setBox(JSON.parse(e.data));
     };
 
     return () => ws.close();
   }, [session]);
 
-  const handleDragStart = (e: React.MouseEvent) => {
-    if (!boxRef.current) return;
-    
-    const rect = boxRef.current.getBoundingClientRect();
-    dragOffsetRef.current = {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    };
+  // Drag handlers
+  // Drag handlers
+const handleMouseDown = (e: any) => {
+  dragging.current = true;
+  const rect = boxRef.current.getBoundingClientRect();
+  offset.current = {
+    x: e.clientX - rect.left,
+    y: e.clientY - rect.top
+  };
+};
+
+const handleMouseMove = (e: any) => {
+  if (!dragging.current || !wsRef.current) return;
+  
+  const x = e.clientX - offset.current.x;
+  const y = e.clientY - offset.current.y;
+  
+  // Update local position immediately
+  setBox({ x, y });
+  
+  // Send to server for other clients
+  wsRef.current.send(JSON.stringify({ x, y }));
+};
+
+const handleMouseUp = () => {
+  dragging.current = false;
+};
+
+const handleMouseLeave = () => {
+  dragging.current = false;
+};
+
+  // Auth handlers
+  const handleLogin = async () => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) alert(error.message);
   };
 
-  const handleDrag = (e: React.MouseEvent) => {
-    if (!wsRef.current || !dragOffsetRef.current) return;
-    if (e.buttons !== 1) return; // Left mouse button not pressed
-
-    const now = Date.now();
-    if (now - lastSentRef.current < 16) return; // ~60fps throttle
-
-    const newX = e.clientX - dragOffsetRef.current.x;
-    const newY = e.clientY - dragOffsetRef.current.y;
-
-    // Constrain to viewport
-    const constrainedX = Math.max(0, Math.min(newX, window.innerWidth - 80));
-    const constrainedY = Math.max(0, Math.min(newY, window.innerHeight - 80));
-
-    lastSentRef.current = now;
-
-    wsRef.current.send(JSON.stringify({ x: constrainedX, y: constrainedY }));
+  const handleSignup = async () => {
+    const { error } = await supabase.auth.signUp({ email, password });
+    if (error) alert(error.message);
+    else alert("Check your email for confirmation!");
   };
 
-  const handleDragEnd = () => {
-    dragOffsetRef.current = null;
-  };
-
-  const handleSignOut = async () => {
+  const handleLogout = async () => {
     await supabase.auth.signOut();
   };
 
-  // ⏳ LOADING
-  if (loading) {
-    return (
-      <div className="h-screen grid place-items-center">
-        <div>Loading...</div>
-      </div>
-    );
-  }
+  const handleGoogleSignIn = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin }
+    });
+  };
 
-  // 🔐 AUTH UI
+  // Login screen
   if (!session) {
     return (
-      <div className="h-screen grid place-items-center bg-gray-100">
-        <Card className="w-87.5">
-          <CardHeader>
-            <CardTitle>{isSignUp ? "Create Account" : "Sign In"}</CardTitle>
-            <CardDescription>
-              {isSignUp 
-                ? "Enter your email below to create your account" 
-                : "Enter your credentials to access the moving box"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4">
-              <div className="grid gap-2">
-                <Input
-                  type="email"
-                  placeholder="Email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Input
-                  type="password"
-                  placeholder="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-              {authError && (
-                <div className="text-sm text-red-500">
-                  {authError}
-                </div>
-              )}
-            </div>
-          </CardContent>
-          <CardFooter className="flex flex-col gap-2">
-            <Button 
-              className="w-full"
-              onClick={async () => {
-                setAuthError(null);
-
-                if (isSignUp) {
-                  const { error } = await supabase.auth.signUp({
-                    email,
-                    password,
-                  });
-
-                  if (error) {
-                    setAuthError(error.message);
-                  } else {
-                    alert("Account created! You can now sign in.");
-                    setIsSignUp(false);
-                  }
-                } else {
-                  const { error } = await supabase.auth.signInWithPassword({
-                    email,
-                    password,
-                  });
-
-                  if (error) {
-                    setAuthError(error.message);
-                  }
-                }
+      <div style={{ 
+        height: "100vh", 
+        display: "flex", 
+        justifyContent: "center", 
+        alignItems: "center",
+        background: "#f0f0f0",
+        fontFamily: "system-ui, -apple-system, sans-serif"
+      }}>
+        <div style={{
+          background: "white",
+          padding: "2rem",
+          borderRadius: "12px",
+          boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+          width: "320px"
+        }}>
+          <h2 style={{ 
+            marginBottom: "1.5rem", 
+            textAlign: "center",
+            color: "#333"
+          }}>
+            Moving Box
+          </h2>
+          
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "10px",
+              marginBottom: "1rem",
+              border: "1px solid #ccc",
+              borderRadius: "6px",
+              fontSize: "14px",
+              boxSizing: "border-box"
+            }}
+          />
+          
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "10px",
+              marginBottom: "1rem",
+              border: "1px solid #ccc",
+              borderRadius: "6px",
+              fontSize: "14px",
+              boxSizing: "border-box"
+            }}
+          />
+          
+          <div style={{ display: "flex", gap: "8px", marginBottom: "1rem" }}>
+            <button 
+              onClick={handleLogin}
+              style={{
+                flex: 1,
+                padding: "10px",
+                background: "#3b82f6",
+                color: "white",
+                border: "none",
+                borderRadius: "6px",
+                fontSize: "14px",
+                fontWeight: "500",
+                cursor: "pointer"
               }}
             >
-              {isSignUp ? "Sign Up" : "Sign In"}
-            </Button>
-            <Button
-              variant="ghost"
-              className="w-full"
-              onClick={() => setIsSignUp(!isSignUp)}
+              Login
+            </button>
+            
+            <button 
+              onClick={handleSignup}
+              style={{
+                flex: 1,
+                padding: "10px",
+                background: "#10b981",
+                color: "white",
+                border: "none",
+                borderRadius: "6px",
+                fontSize: "14px",
+                fontWeight: "500",
+                cursor: "pointer"
+              }}
             >
-              {isSignUp
-                ? "Already have an account? Sign in"
-                : "Don't have an account? Sign up"}
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => supabase.auth.signInWithOAuth({
-                provider: "google",
-              })}
-            >
-              Sign in with Google
-            </Button>
-          </CardFooter>
-        </Card>
+              Sign Up
+            </button>
+          </div>
+
+          <button 
+            onClick={handleGoogleSignIn}
+            style={{
+              width: "100%",
+              padding: "10px",
+              background: "white",
+              color: "#333",
+              border: "1px solid #ccc",
+              borderRadius: "6px",
+              fontSize: "14px",
+              fontWeight: "500",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px"
+            }}
+          >
+            <span>Continue with Google</span>
+          </button>
+        </div>
       </div>
     );
   }
 
-  // 🟦 MAIN APP
+  // Main app
   return (
-    <div className="w-screen h-screen bg-gray-100 relative">
-      {/* Top Bar with Status Indicators */}
-      <div className="absolute top-4 left-4 right-4 z-10 flex justify-between items-center">
-        {/* Left side - Profile Info with Cache Status */}
-        <div className="flex items-center gap-2">
-          {profile && (
-            <Badge variant={isCached ? "default" : "outline"} className="flex items-center gap-1 px-3 py-1">
-              <span className="font-medium">{profile.name || profile.email}</span>
-              {isCached ? (
-                <span className="text-xs ml-1" title="Cached in KV">💾</span>
-              ) : (
-                <span className="text-xs ml-1" title="Fresh from database">🆕</span>
-              )}
-              {profileLoading && <span className="text-xs text-gray-500">...</span>}
-            </Badge>
-          )}
-          
-          {/* Sign Out Button */}
-          <Button variant="outline" size="sm" onClick={handleSignOut}>
-            Sign Out
-          </Button>
-        </div>
-
-        {/* Right side - Connection Status */}
-        <Badge variant={connectionStatus === "connected" ? "default" : "destructive"} className="px-3 py-1">
-          {connectionStatus === "connected" ? "🟢 Connected" : "🔴 Disconnected"}
-        </Badge>
+    <div 
+      style={{ 
+        height: "100vh", 
+        background: "#f0f0f0",
+        position: "relative",
+        overflow: "hidden",
+        cursor: dragging.current ? "grabbing" : "default",
+        fontFamily: "system-ui, -apple-system, sans-serif"
+      }}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
+    >
+      {/* Status bar */}
+      <div style={{
+        position: "absolute",
+        top: "10px",
+        left: "10px",
+        right: "10px",
+        display: "flex",
+        justifyContent: "space-between",
+        padding: "8px 16px",
+        background: "rgba(255,255,255,0.95)",
+        borderRadius: "8px",
+        boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+        zIndex: 10,
+        border: "1px solid #e0e0e0"
+      }}>
+        <button 
+          onClick={handleLogout}
+          style={{
+            padding: "6px 16px",
+            background: "#ef4444",
+            color: "white",
+            border: "none",
+            borderRadius: "6px",
+            fontSize: "14px",
+            fontWeight: "500",
+            cursor: "pointer"
+          }}
+        >
+          Logout
+        </button>
+        
+        <span style={{ 
+          padding: "6px 16px",
+          background: connected ? "#10b981" : "#ef4444",
+          color: "white",
+          borderRadius: "6px",
+          fontSize: "14px",
+          fontWeight: "500"
+        }}>
+          {connected ? "🟢 Connected" : "🔴 Disconnected"}
+        </span>
       </div>
 
       {/* Draggable Box */}
-      {position && (
-        <div
-          ref={boxRef}
-          onMouseDown={handleDragStart}
-          onMouseMove={handleDrag}
-          onMouseUp={handleDragEnd}
-          onMouseLeave={handleDragEnd}
-          style={{
-            left: position.x,
-            top: position.y,
-          }}
-          className="absolute w-20 h-20 bg-blue-500 rounded-lg cursor-grab active:cursor-grabbing transition-none select-none shadow-lg hover:bg-blue-600"
-        />
-      )}
+      <div
+        ref={boxRef}
+        onMouseDown={handleMouseDown}
+        style={{
+          position: "absolute",
+          left: box.x,
+          top: box.y,
+          width: "80px",
+          height: "80px",
+          background: "#3b82f6",
+          borderRadius: "12px",
+          cursor: "grab",
+          boxShadow: "0 8px 12px rgba(0,0,0,0.15)",
+          userSelect: "none",
+          transition: "box-shadow 0.2s",
+          border: "3px solid white"
+        }}
+      />
     </div>
   );
 }
