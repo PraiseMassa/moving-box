@@ -2,10 +2,6 @@
 
 A real-time web application where multiple users can drag a box simultaneously and see each other's movements instantly. Built with React, Cloudflare Workers, Durable Objects, and Supabase Auth.
 
-## Live Demo
-
-[Add your deployed URL here when available]
-
 ## Project Overview
 
 This project consists of two main parts:
@@ -94,32 +90,32 @@ moving-box/
 
 2. **Set up environment variables**
 
-# Frontend (.env in /frontend):
+#### Frontend (.env in /frontend):
 
 VITE_SUPABASE_URL=your_supabase_url \
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 
 3. **Install dependencies**
 
-# Backend:
+#### Backend:
 
 cd backend
 npm install
 
-# Frontend:
+#### Frontend:
 
 cd frontend
 npm install
 
-### Running Locally
+## Running Locally
 
-# Start the backend
+### Start the backend
 
 cd backend \
 npm run dev \
 Backend runs on http://localhost:8787
 
-# Start the frontend
+### Start the frontend
 
 cd frontend \
 npm run dev \
@@ -135,34 +131,34 @@ Durable Object: Backend creates/joins a room identified by user \
 Real-time Updates: Box position changes broadcast to all connected clients \
 Persistence: Box position saved to Durable Object storage
 
-### Testing
+## Testing
 
-# Test Multi-user Sync
+### Test Multi-user Sync
 
 Open two browser windows \
 Log in with different accounts (or same account) \
 Drag the box in one window \
 Watch it move in the other window instantly
 
-# Test Persistence
+### Test Persistence
 
 Drag box to a new position \
 Close and reopen the tab \
 Box returns to last position
 
-### Screenshots
+## Screenshots
 
-# Login Screen
+### Login Screen
 
 Login-Signup page.png \
 Clean authentication UI with email/password and Google options
 
-# Main Application
+### Main Application
 
 mainApp.png \
 Draggable box with connection status indicator
 
-# Real-time Sync
+### Real-time Sync
 
 movingboxgif.mp4 \
 Box position syncs across multiple browser tabs
