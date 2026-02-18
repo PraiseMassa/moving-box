@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "backend",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-01-01",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "BOX_ROOM",
+        "class_name": "BoxRoom"
+      }
+    ]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "USER_PROFILES",
+      "id": "6490ed1c2d624f028b8ac12704b3fa95"
+    }
+  ],
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["BoxRoom"]
+    }
+  ]
+}
